@@ -4,6 +4,7 @@ import json
 import time
 import os
 import pdfplumber
+import numpy as np
 from google import genai
 from google.genai import types
 from google.genai.errors import ServerError
@@ -12,7 +13,7 @@ from google.genai.errors import ServerError
 # 1. CẤU HÌNH TRANG STREAMLIT
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="CV Skill-Gap & Job Matching Engine",
+    page_title="AI Job Matching & CV Optimizer Engine",
     page_icon="💼",
     layout="wide"
 )
@@ -26,7 +27,7 @@ TECH_KEYWORDS = [
 ]
 
 # ---------------------------------------------------------------------------
-# 2. HÀM ĐỌC DATABASE & CHUYỂN ĐỔI DỮ LIỆU
+# 2. HÀM ĐỌC DATABASE & XỬ LÝ VĂN BẢN
 # ---------------------------------------------------------------------------
 def load_jobs_database() -> list:
     if os.path.exists("jobs.json"):
@@ -68,35 +69,60 @@ def extract_text_from_pdf_file(uploaded_file) -> str:
         return ""
 
 # ---------------------------------------------------------------------------
-# 3. ALGORITHM: LỌC TOP JOB KHỚP NHẤT VỚI CV
+# 3. LEVEL 1: VECTOR EMBEDDINGS & COSINE SIMILARITY MATH
 # ---------------------------------------------------------------------------
-def find_top_matching_jobs(cv_skills: set, jobs_db: list, top_k: int = 3) -> list:
+def get_text_embedding(api_key: str, text: str) -> list:
+    client = genai.Client(api_key=api_key)
+    response = client.models.embed_content(
+        model="text-embedding-004",
+        contents=text
+    )
+    return response.embeddings[0].values
+
+def calculate_cosine_similarity(vec1: list, vec2: list) -> float:
+    u = np.array(vec1)
+    v = np.array(vec2)
+    dot_product = np.dot(u, v)
+    norm_u = np.linalg.norm(u)
+    norm_v = np.linalg.norm(v)
+    if norm_u == 0 or norm_v == 0:
+        return 0.0
+    return float(dot_product / (norm_u * norm_v))
+
+def find_top_matching_jobs_semantic(api_key: str, cv_text: str, cv_skills: set, jobs_db: list, top_k: int = 3) -> list:
+    # 1. Biến CV thành Vector 768 chiều
+    cv_vector = get_text_embedding(api_key, cv_text)
+    
     scored_jobs = []
     for job in jobs_db:
+        # 2. Biến JD thành Vector
+        job_full_text = f"{job['title']} {job['company']} {job['description']} " + " ".join(job.get('skills', []))
+        job_vector = get_text_embedding(api_key, job_full_text)
+        
+        # 3. Tính Cosine Similarity
+        semantic_score = calculate_cosine_similarity(cv_vector, job_vector)
+        match_score = round(max(0, semantic_score) * 100)
+        
+        # 4. Đối soát kỹ năng cứng Regex
         job_skills = set(job.get("skills", []))
         matched = cv_skills.intersection(job_skills)
-        score = round((len(matched) / len(job_skills) * 100)) if job_skills else 0
+        missing = list(job_skills - cv_skills)
         
         scored_jobs.append({
             "job_data": job,
-            "match_score": score,
+            "match_score": match_score,
             "matched_skills": list(matched),
-            "missing_skills": list(job_skills - cv_skills)
+            "missing_skills": missing
         })
     
-    # Sắp xếp theo điểm số từ cao xuống thấp
     scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
     return scored_jobs[:top_k]
 
-# ---------------------------------------------------------------------------
-# 4. AI ENGINE: GEMINI TỔNG HỢP & ĐÁNH GIÁ CHI TIẾT
-# ---------------------------------------------------------------------------
 def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: list) -> dict:
     client = genai.Client(api_key=api_key)
-
     prompt = f"""
     Bạn là chuyên gia tư vấn định hướng nghề nghiệp AI/IT.
-    Dưới đây là CV của ứng viên và Danh sách 3 công việc phù hợp nhất được hệ thống tìm thấy.
+    Dưới đây là CV của ứng viên và Danh sách 3 công việc phù hợp nhất.
 
     --- CV CỦA ỨNG VIÊN ---
     {cv_text}
@@ -105,104 +131,162 @@ def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: l
     {json.dumps(top_jobs, ensure_ascii=False, indent=2)}
 
     --- YÊU CẦU ---
-    Hãy đưa ra đánh giá tổng quan ngắn gọn về độ tương thích công việc của ứng viên dưới dạng JSON chuẩn:
+    Trả về JSON chuẩn:
     {{
-        "career_advice": "<Đánh giá 2-3 câu về vị trí công việc nào phù hợp nhất với hồ sơ hiện tại và hướng phát triển tiếp theo>",
+        "career_advice": "<Đánh giá 2-3 câu về vị trí công việc phù hợp nhất>",
         "top_recommendations": [
             {{
                 "company": "<Tên công ty>",
                 "title": "<Tên vị trí>",
-                "reason": "<Lý do 1-2 câu vì sao ứng viên nên ứng tuyển công ty này>"
+                "reason": "<Lý do vì sao ứng viên nên ứng tuyển>"
             }}
         ]
     }}
     """
-
     candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
     for model_name in candidate_models:
         try:
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
-                )
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0)
             )
             return json.loads(response.text)
         except Exception:
             continue
-            
     return {"career_advice": "Không thể kết nối AI để sinh đánh giá chi tiết.", "top_recommendations": []}
 
 # ---------------------------------------------------------------------------
-# 5. GIAO DIỆN NGUỜI DÙNG (STREAMLIT UI)
+# 4. LEVEL 2: AI CV OPTIMIZER (MÔ HÌNH STAR)
 # ---------------------------------------------------------------------------
-st.title("💼 AI Job Matching & Skill-Gap Engine")
-st.caption("Tự động tìm kiếm Công ty & Vị trí tuyển dụng phù hợp nhất với năng lực CV của bạn")
+def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    Bạn là một chuyên gia viết CV và tối ưu hồ sơ ứng tuyển ngành IT/AI.
+    Hãy lấy câu mô tả kinh nghiệm/dự án sơ sài dưới đây của ứng viên và viết lại thành 3 phiên bản xuất sắc theo mô hình STAR (Situation - Task - Action - Result).
+
+    --- MÔ TẢ CŨ CỦA ỨNG VIÊN ---
+    "{raw_bullet}"
+
+    --- YÊU CẦU ---
+    - Mỗi phiên bản viết lại phải thể hiện rõ: Công nghệ sử dụng, giải pháp kỹ thuật, và kết quả định lượng (con số %).
+    - Trả về DUY NHẤT 1 chuỗi JSON chuẩn:
+    {{
+        "optimized_bullets": [
+            "Phiên bản 1 (Tập trung Kỹ thuật & Công nghệ)",
+            "Phiên bản 2 (Tập trung Kết quả & Con số định lượng)",
+            "Phiên bản 3 (Tập trung Tư duy Giải quyết Bài toán)"
+        ],
+        "key_keywords_added": ["Từ khóa công nghệ 1", "Từ khóa công nghệ 2"]
+    }}
+    """
+    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
+    for model_name in candidate_models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
+            )
+            return json.loads(response.text)
+        except Exception:
+            continue
+    return {"optimized_bullets": [], "key_keywords_added": []}
+
+# ---------------------------------------------------------------------------
+# 5. GIAO DIỆN STREAMLIT UI (CÓ TABS)
+# ---------------------------------------------------------------------------
+st.title("💼 AI Job Matching & CV Optimizer Engine")
+st.caption("Hệ thống Phân tích Khớp nối Việc làm (Vector Search) & Tối ưu Hồ sơ Chuẩn STAR")
 
 # SIDEBAR
 with st.sidebar:
     st.header("⚙️ Cấu hình Hệ thống")
     api_key_input = st.text_input("Nhập Gemini API Key:", type="password")
-    
     jobs_db = load_jobs_database()
     st.success(f"📊 Đã nạp thành công **{len(jobs_db)}** tin tuyển dụng thực tế!")
 
-# KHU VỰC UPLOAD CV
-st.subheader("📄 Tải lên CV (PDF) của bạn để tìm công việc phù hợp")
-uploaded_cv = st.file_uploader("Chọn file CV dạng PDF", type=["pdf"])
+# TẠO TABS
+tab1, tab2 = st.tabs(["🔍 1. Tìm Công Ty & Phân Tích Job (Vector Search)", "✨ 2. AI Tối Ưu CV Chuẩn STAR"])
 
-if st.button("🚀 Tìm Công Ty & Việc Làm Phù Hợp Ngay", type="primary", use_container_width=True):
-    if not api_key_input:
-        st.warning("⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái!")
-    elif not uploaded_cv:
-        st.warning("⚠️ Vui lòng tải lên file PDF CV!")
-    else:
-        with st.spinner("🔍 Hệ thống đang trích xuất CV và quét đối soát với Cơ sở dữ liệu việc làm..."):
-            cv_text = extract_text_from_pdf_file(uploaded_cv)
-            
-            if not cv_text:
-                st.error("❌ Không thể đọc văn bản từ PDF này.")
-            else:
-                # 1. Trích xuất kỹ năng bằng Regex
-                cv_skills = extract_hard_skills_with_regex(cv_text)
-                
-                # 2. Thuật toán lọc Top 3 công việc hợp nhất
-                top_3_matches = find_top_matching_jobs(cv_skills, jobs_db, top_k=3)
-                
-                # 3. Gọi Gemini AI đánh giá tổng quan
-                ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
-                
-                st.success("🎉 Đã tìm thấy danh sách công ty và công việc phù hợp nhất với bạn!")
-                
-                # --- ĐÁNH GIÁ NGHỀ NGHIỆP TỪ AI ---
-                st.markdown("---")
-                st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
-                st.info(ai_evaluation.get("career_advice", ""))
-                
-                # --- HIỂN THỊ CÁC THẺ CÔNG VIỆC TOP MATCHING ---
-                st.markdown("---")
-                st.subheader("🏢 TOP 3 CÔNG TY & VỊ TRÍ PHÙ HỢP NHẤT")
-                
-                for idx, match in enumerate(top_3_matches, 1):
-                    job = match["job_data"]
-                    score = match["match_score"]
+# --- TAB 1: VECTOR JOB MATCHING ---
+with tab1:
+    st.subheader("📄 Tải lên CV (PDF) của bạn để tìm công việc phù hợp")
+    uploaded_cv = st.file_uploader("Chọn file CV dạng PDF", type=["pdf"])
+
+    if st.button("🚀 Tìm Công Ty & Việc Làm Phù Hợp Ngay", type="primary", use_container_width=True):
+        if not api_key_input:
+            st.warning("⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái!")
+        elif not uploaded_cv:
+            st.warning("⚠️ Vui lòng tải lên file PDF CV!")
+        else:
+            with st.spinner("🔍 Đang tính toán Vector Embeddings (text-embedding-004) & Cosine Similarity..."):
+                cv_text = extract_text_from_pdf_file(uploaded_cv)
+                if not cv_text:
+                    st.error("❌ Không thể đọc văn bản từ PDF này.")
+                else:
+                    cv_skills = extract_hard_skills_with_regex(cv_text)
                     
-                    with st.container():
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            st.markdown(f"### {idx}. {job['title']} — **{job['company']}**")
-                            st.caption(f"📍 **Địa điểm:** {job['location']} | 🔗 [Trang tuyển dụng chính thức]({job['apply_link']})")
-                            st.write(f"**Mô tả công việc:** {job['description']}")
-                        with c2:
-                            st.metric(label="Mức độ Khớp CV", value=f"{score}%")
+                    # Gọi hàm Vector Semantic Matcher
+                    top_3_matches = find_top_matching_jobs_semantic(api_key_input, cv_text, cv_skills, jobs_db, top_k=3)
+                    ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
+                    
+                    st.success("🎉 Đã tính toán xong độ tương thích bằng Vector Embeddings!")
+                    
+                    st.markdown("---")
+                    st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
+                    st.info(ai_evaluation.get("career_advice", ""))
+                    
+                    st.markdown("---")
+                    st.subheader("🏢 TOP 3 CÔNG TY & VỊ TRÍ PHÙ HỢP NHẤT")
+                    
+                    for idx, match in enumerate(top_3_matches, 1):
+                        job = match["job_data"]
+                        score = match["match_score"]
                         
-                        # Hiển thị kỹ năng đã có vs thiếu cho từng Job
-                        sc1, sc2 = st.columns(2)
-                        with sc1:
-                            st.write("✅ **Kỹ năng CV đáp ứng:** " + (", ".join(match["matched_skills"]) if match["matched_skills"] else "Chưa ghi nhận"))
-                        with sc2:
-                            st.write("❌ **Kỹ năng cần bổ sung thêm:** " + (", ".join(match["missing_skills"]) if match["missing_skills"] else "Đã đáp ứng đủ!"))
-                        
-                        st.markdown("---")
+                        with st.container():
+                            c1, c2 = st.columns([3, 1])
+                            with c1:
+                                st.markdown(f"### {idx}. {job['title']} — **{job['company']}**")
+                                st.caption(f"📍 **Địa điểm:** {job['location']} | 🔗 [Trang tuyển dụng chính thức]({job['apply_link']})")
+                                st.write(f"**Mô tả công việc:** {job['description']}")
+                            with c2:
+                                st.metric(label="Mức độ Khớp Ngữ Nghĩa", value=f"{score}%")
+                            
+                            sc1, sc2 = st.columns(2)
+                            with sc1:
+                                st.write("✅ **Kỹ năng CV đáp ứng:** " + (", ".join(match["matched_skills"]) if match["matched_skills"] else "Chưa ghi nhận"))
+                            with sc2:
+                                st.write("❌ **Kỹ năng cần bổ sung thêm:** " + (", ".join(match["missing_skills"]) if match["missing_skills"] else "Đã đáp ứng đủ!"))
+                            
+                            st.markdown("---")
+
+# --- TAB 2: AI CV OPTIMIZER ---
+with tab2:
+    st.subheader("✨ Biến câu mô tả CV sơ sài thành Bullet-Points đắt giá chuẩn STAR")
+    st.write("Nhập một dòng mô tả dự án hoặc kinh nghiệm làm việc cũ của bạn vào đây:")
+    
+    user_bullet_input = st.text_area(
+        "Nhập câu mô tả cũ:",
+        height=100,
+        placeholder="Ví dụ: Tôi có làm một dự án phân tích dữ liệu CV bằng Python và Streamlit."
+    )
+    
+    if st.button("🚀 Viết Lại Chuẩn STAR Ngay", type="primary"):
+        if not api_key_input:
+            st.warning("⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái!")
+        elif not user_bullet_input.strip():
+            st.warning("⚠️ Vui lòng nhập câu mô tả cũ cần viết lại!")
+        else:
+            with st.spinner("🤖 AI đang phân tích ngữ cảnh và viết lại theo mô hình STAR..."):
+                opt_result = optimize_cv_bullet_points(api_key_input, user_bullet_input)
+                
+                st.success("🎉 Đã tạo thành công các phiên bản CV chuẩn ATS!")
+                
+                st.markdown("### 📝 Các gợi ý viết lại đắt giá:")
+                for idx, bullet in enumerate(opt_result.get("optimized_bullets", []), 1):
+                    st.info(f"**Gợi ý {idx}:** {bullet}")
+                
+                keywords = opt_result.get("key_keywords_added", [])
+                if keywords:
+                    st.write("🔑 **Từ khóa công nghệ đắt giá được bổ sung:** " + ", ".join(keywords))
