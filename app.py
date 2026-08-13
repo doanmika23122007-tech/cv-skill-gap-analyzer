@@ -2,37 +2,38 @@ import streamlit as st
 import re
 import json
 import time
+import os
 import pdfplumber
 from google import genai
 from google.genai import types
-from google.genai.errors import ServerError, APIError
+from google.genai.errors import ServerError
 
 # ---------------------------------------------------------------------------
 # 1. CẤU HÌNH TRANG STREAMLIT
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="CV Skill-Gap Analyzer (Hybrid Engine)",
-    page_icon="🛡️",
+    page_title="CV Skill-Gap & Job Matching Engine",
+    page_icon="💼",
     layout="wide"
 )
 
-# ---------------------------------------------------------------------------
-# 2. DICTIONARY TỪ KHÓA CÔNG NGHỆ CHUẨN (RULE-BASED TAXONOMY)
-# ---------------------------------------------------------------------------
 TECH_KEYWORDS = [
-    # Ngôn ngữ lập trình
     "Python", "C\+\+", "Java", "JavaScript", "TypeScript", "SQL", "R", "HTML", "CSS",
-    # Thư viện Data & AI
     "Pandas", "NumPy", "Matplotlib", "Seaborn", "Scikit-Learn", "PyTorch", "TensorFlow", 
     "Keras", "OpenCV", "MediaPipe", "NLTK", "Spacy", "Transformers", "FastAPI", "Flask", "Django",
-    # Công cụ & Hạ tầng
     "Git", "GitHub", "Docker", "Kubernetes", "Jupyter", "VS Code", "PostgreSQL", "MySQL", 
-    "MongoDB", "Streamlit", "Gradio", "Linux", "AWS", "GCP", "Azure"
+    "MongoDB", "Streamlit", "Gradio", "Linux", "AWS", "GCP", "Azure", "Machine Learning", "Deep Learning", "LLM"
 ]
 
 # ---------------------------------------------------------------------------
-# 3. TẦNG 1: BỘ LỌC ĐỐI SOÁT TỪ KHÓA BẰNG PYTHON REGEX
+# 2. HÀM ĐỌC DATABASE & CHUYỂN ĐỔI DỮ LIỆU
 # ---------------------------------------------------------------------------
+def load_jobs_database() -> list:
+    if os.path.exists("jobs.json"):
+        with open("jobs.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
 def extract_hard_skills_with_regex(text: str) -> set:
     found_skills = set()
     for skill in TECH_KEYWORDS:
@@ -42,9 +43,6 @@ def extract_hard_skills_with_regex(text: str) -> set:
             found_skills.add(clean_name)
     return found_skills
 
-# ---------------------------------------------------------------------------
-# 4. TẦNG 2: CLEANING & PIPELINE ĐỌC CV
-# ---------------------------------------------------------------------------
 def clean_and_sanitize_text(raw_text: str) -> str:
     cleaned = re.sub(r'[\uE000-\uF8FF]', '', raw_text)
     cleaned = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '[EMAIL_MASKED]', cleaned)
@@ -70,149 +68,141 @@ def extract_text_from_pdf_file(uploaded_file) -> str:
         return ""
 
 # ---------------------------------------------------------------------------
-# 5. TẦNG 3: GEMINI AI ENGINE (CÓ CƠ CHẾ KHẮC PHỤC NGHẼN NETWORK / 503 RETRY)
+# 3. ALGORITHM: LỌC TOP JOB KHỚP NHẤT VỚI CV
 # ---------------------------------------------------------------------------
-def analyze_skill_gap_hybrid(api_key: str, cv_text: str, jd_text: str, py_cv_skills: set, py_jd_skills: set) -> dict:
+def find_top_matching_jobs(cv_skills: set, jobs_db: list, top_k: int = 3) -> list:
+    scored_jobs = []
+    for job in jobs_db:
+        job_skills = set(job.get("skills", []))
+        matched = cv_skills.intersection(job_skills)
+        score = round((len(matched) / len(job_skills) * 100)) if job_skills else 0
+        
+        scored_jobs.append({
+            "job_data": job,
+            "match_score": score,
+            "matched_skills": list(matched),
+            "missing_skills": list(job_skills - cv_skills)
+        })
+    
+    # Sắp xếp theo điểm số từ cao xuống thấp
+    scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
+    return scored_jobs[:top_k]
+
+# ---------------------------------------------------------------------------
+# 4. AI ENGINE: GEMINI TỔNG HỢP & ĐÁNH GIÁ CHI TIẾT
+# ---------------------------------------------------------------------------
+def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: list) -> dict:
     client = genai.Client(api_key=api_key)
 
-    py_matched = list(py_cv_skills.intersection(py_jd_skills))
-    py_missing = list(py_jd_skills - py_cv_skills)
-
     prompt = f"""
-    Bạn là hệ thống kiểm định CV chuyên nghiệp. Hãy phân tích CV và JD dưới đây.
+    Bạn là chuyên gia tư vấn định hướng nghề nghiệp AI/IT.
+    Dưới đây là CV của ứng viên và Danh sách 3 công việc phù hợp nhất được hệ thống tìm thấy.
 
-    --- DỮ LIỆU ĐỐI SOÁT TỪ MÃ PYTHON (ĐÃ XÁC THỰC 100% BẰNG REGEX) ---
-    - Các từ khóa kỹ thuật cứng CV VÀ JD ĐỀU CÓ: {py_matched}
-    - Các từ khóa kỹ thuật cứng JD CẦN NHƯNG CV THIẾU: {py_missing}
-
-    --- NỘI DUNG CV ---
+    --- CV CỦA ỨNG VIÊN ---
     {cv_text}
 
-    --- NỘI DUNG JD ---
-    {jd_text}
+    --- TOP 3 CÔNG VIỆC TÌM THẤY ---
+    {json.dumps(top_jobs, ensure_ascii=False, indent=2)}
 
     --- YÊU CẦU ---
-    Hãy kết hợp dữ liệu đối soát từ Python và phân tích ngữ cảnh để trả về DUY NHẤT 1 chuỗi JSON chuẩn:
+    Hãy đưa ra đánh giá tổng quan ngắn gọn về độ tương thích công việc của ứng viên dưới dạng JSON chuẩn:
     {{
-        "match_score": <chữ_số_từ_0_đến_100>,
-        "matched_skills": [<danh_sách_kỹ_năng_CV_đáp_ứng_bao_gồm_cả_kỹ_năng_cứng_và_mềm>],
-        "missing_skills": [<danh_sách_kỹ_năng_còn_thiếu_so_với_JD>],
-        "summary_evaluation": "<đánh_giá_khách_quan_2-3_câu>",
-        "actionable_advice": [<3_gợi_ý_bổ_sung_hồ_sơ_thực_tế>]
+        "career_advice": "<Đánh giá 2-3 câu về vị trí công việc nào phù hợp nhất với hồ sơ hiện tại và hướng phát triển tiếp theo>",
+        "top_recommendations": [
+            {{
+                "company": "<Tên công ty>",
+                "title": "<Tên vị trí>",
+                "reason": "<Lý do 1-2 câu vì sao ứng viên nên ứng tuyển công ty này>"
+            }}
+        ]
     }}
     """
 
-    # Danh sách các tên model dự phòng nếu một model bị nghẽn (503)
     candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
-    last_exception = None
-
     for model_name in candidate_models:
-        for attempt in range(2):  # Thử lại tối đa 2 lần cho mỗi model
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0
-                    )
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
                 )
-                return json.loads(response.text)
-            except ServerError as e:
-                last_exception = e
-                time.sleep(2)  # Chờ 2 giây nếu nghẽn mạng rồi tự động thử lại
-            except Exception as e:
-                last_exception = e
-                break  # Nếu lỗi khác thì chuyển model ngay
-
-    raise last_exception
+            )
+            return json.loads(response.text)
+        except Exception:
+            continue
+            
+    return {"career_advice": "Không thể kết nối AI để sinh đánh giá chi tiết.", "top_recommendations": []}
 
 # ---------------------------------------------------------------------------
-# 6. GIAO DIỆN STREAMLIT UI
+# 5. GIAO DIỆN NGUỜI DÙNG (STREAMLIT UI)
 # ---------------------------------------------------------------------------
-st.title("🛡️ AI Skill-Gap Analyzer (Hybrid Engine)")
-st.caption("Hệ thống phân tích khoảng cách kỹ năng đa tầng: Python Regex + Gemini AI Agent")
+st.title("💼 AI Job Matching & Skill-Gap Engine")
+st.caption("Tự động tìm kiếm Công ty & Vị trí tuyển dụng phù hợp nhất với năng lực CV của bạn")
 
 # SIDEBAR
 with st.sidebar:
     st.header("⚙️ Cấu hình Hệ thống")
     api_key_input = st.text_input("Nhập Gemini API Key:", type="password")
-    st.markdown("---")
-    st.markdown("**Kiến trúc Đa tầng:**\n- 🐍 **Tầng 1:** Python Regex Hard-skill Matcher\n- 🤖 **Tầng 2:** Gemini LLM Semantic Analyzer")
+    
+    jobs_db = load_jobs_database()
+    st.success(f"📊 Đã nạp thành công **{len(jobs_db)}** tin tuyển dụng thực tế!")
 
-col1, col2 = st.columns(2)
+# KHU VỰC UPLOAD CV
+st.subheader("📄 Tải lên CV (PDF) của bạn để tìm công việc phù hợp")
+uploaded_cv = st.file_uploader("Chọn file CV dạng PDF", type=["pdf"])
 
-with col1:
-    st.subheader("📄 1. Tải lên CV (PDF)")
-    uploaded_cv = st.file_uploader("Chọn file CV dạng PDF", type=["pdf"])
-
-with col2:
-    st.subheader("📋 2. Nhập Job Description (JD)")
-    jd_input = st.text_area("Dán nội dung tuyển dụng/JD vào đây:", height=200)
-
-st.markdown("---")
-if st.button("🔍 Phân Tích CV Ngay (Hybrid Check)", type="primary", use_container_width=True):
+if st.button("🚀 Tìm Công Ty & Việc Làm Phù Hợp Ngay", type="primary", use_container_width=True):
     if not api_key_input:
-        st.warning("⚠️ Vui lòng nhập Gemini API Key!")
+        st.warning("⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái!")
     elif not uploaded_cv:
         st.warning("⚠️ Vui lòng tải lên file PDF CV!")
-    elif not jd_input.strip():
-        st.warning("⚠️ Vui lòng dán nội dung JD!")
     else:
-        with st.spinner("⚡ Đang chạy Kiểm tra Đa tầng (Python Regex + Gemini AI)..."):
+        with st.spinner("🔍 Hệ thống đang trích xuất CV và quét đối soát với Cơ sở dữ liệu việc làm..."):
             cv_text = extract_text_from_pdf_file(uploaded_cv)
             
             if not cv_text:
-                st.error("❌ File PDF không chứa dữ liệu văn bản!")
+                st.error("❌ Không thể đọc văn bản từ PDF này.")
             else:
-                # 1. Chạy Tầng 1 (Python Regex)
-                py_cv_skills = extract_hard_skills_with_regex(cv_text)
-                py_jd_skills = extract_hard_skills_with_regex(jd_input)
+                # 1. Trích xuất kỹ năng bằng Regex
+                cv_skills = extract_hard_skills_with_regex(cv_text)
                 
-                # 2. Chạy Tầng 2 & 3 (AI + Hybrid Verification + Retry Logic)
-                try:
-                    result = analyze_skill_gap_hybrid(api_key_input, cv_text, jd_input, py_cv_skills, py_jd_skills)
+                # 2. Thuật toán lọc Top 3 công việc hợp nhất
+                top_3_matches = find_top_matching_jobs(cv_skills, jobs_db, top_k=3)
+                
+                # 3. Gọi Gemini AI đánh giá tổng quan
+                ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
+                
+                st.success("🎉 Đã tìm thấy danh sách công ty và công việc phù hợp nhất với bạn!")
+                
+                # --- ĐÁNH GIÁ NGHỀ NGHIỆP TỪ AI ---
+                st.markdown("---")
+                st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
+                st.info(ai_evaluation.get("career_advice", ""))
+                
+                # --- HIỂN THỊ CÁC THẺ CÔNG VIỆC TOP MATCHING ---
+                st.markdown("---")
+                st.subheader("🏢 TOP 3 CÔNG TY & VỊ TRÍ PHÙ HỢP NHẤT")
+                
+                for idx, match in enumerate(top_3_matches, 1):
+                    job = match["job_data"]
+                    score = match["match_score"]
                     
-                    # --- HIỂN THỊ KẾT QUẢ ---
-                    st.success("✅ Phân tích Đa tầng Hoàn tất!")
-                    
-                    # Hiển thị đối soát nhanh Tầng 1
-                    with st.expander("🐍 Xem Đối soát Từ khóa Cứng độc lập bởi Python Regex (Tầng 1)", expanded=True):
-                        p_col1, p_col2 = st.columns(2)
-                        with p_col1:
-                            st.write("**Từ khóa Kỹ thuật CV & JD ĐỀU CÓ:**")
-                            st.info(", ".join(py_cv_skills.intersection(py_jd_skills)) if py_cv_skills.intersection(py_jd_skills) else "Không tìm thấy từ khóa khớp trực tiếp")
-                        with p_col2:
-                            st.write("**Từ khóa Kỹ thuật JD CẦN nhưng CV THIẾU:**")
-                            st.error(", ".join(py_jd_skills - py_cv_skills) if (py_jd_skills - py_cv_skills) else "Không thiếu từ khóa kỹ thuật cứng nào!")
-
-                    st.markdown("---")
-                    
-                    # Hiển thị báo cáo AI Tầng 2
-                    score = result.get("match_score", 0)
-                    st.metric(label="🎯 Mức độ Phù hợp Tổng thể (Hybrid Match Score)", value=f"{score} / 100")
-                    st.progress(score / 100)
-                    
-                    res_col1, res_col2 = st.columns(2)
-                    with res_col1:
-                        st.subheader("✅ Kỹ năng ĐÃ CÓ (Tổng hợp)")
-                        for item in result.get("matched_skills", []):
-                            st.write(f"• {item}")
-                            
-                    with res_col2:
-                        st.subheader("❌ Kỹ năng ĐANG THIẾU (Tổng hợp)")
-                        for item in result.get("missing_skills", []):
-                            st.write(f"• {item}")
-                    
-                    st.markdown("---")
-                    st.subheader("📝 Đánh giá Tổng quan")
-                    st.info(result.get("summary_evaluation", ""))
-                    
-                    st.subheader("💡 Lời khuyên Hành động (Action Plan)")
-                    for advice in result.get("actionable_advice", []):
-                        st.success(f"👉 {advice}")
-
-                except ServerError:
-                    st.error("⏳ Máy chủ Google AI hiện đang quá tải lượt truy cập (Lỗi 503). Vui lòng đợi khoảng 5 - 10 giây rồi nhấn nút 'Phân tích' lại nhé!")
-                except Exception as e:
-                    st.error(f"❌ Có lỗi xảy ra: {str(e)}")
+                    with st.container():
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"### {idx}. {job['title']} — **{job['company']}**")
+                            st.caption(f"📍 **Địa điểm:** {job['location']} | 🔗 [Trang tuyển dụng chính thức]({job['apply_link']})")
+                            st.write(f"**Mô tả công việc:** {job['description']}")
+                        with c2:
+                            st.metric(label="Mức độ Khớp CV", value=f"{score}%")
+                        
+                        # Hiển thị kỹ năng đã có vs thiếu cho từng Job
+                        sc1, sc2 = st.columns(2)
+                        with sc1:
+                            st.write("✅ **Kỹ năng CV đáp ứng:** " + (", ".join(match["matched_skills"]) if match["matched_skills"] else "Chưa ghi nhận"))
+                        with sc2:
+                            st.write("❌ **Kỹ năng cần bổ sung thêm:** " + (", ".join(match["missing_skills"]) if match["missing_skills"] else "Đã đáp ứng đủ!"))
+                        
+                        st.markdown("---")

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "job_01",
+    "company": "VinAI Research",
+    "title": "AI / Machine Learning Engineer Intern",
+    "location": "Hà Nội",
+    "skills": ["Python", "PyTorch", "TensorFlow", "Machine Learning", "Git", "SQL"],
+    "description": "Nghiên cứu và phát triển các mô hình Học máy, Xử lý ngôn ngữ tự nhiên (NLP) hoặc Thị giác máy tính. Yêu cầu thành thạo Python, có tư duy thuật toán tốt.",
+    "apply_link": "https://www.vinai.io/careers"
+  },
+  {
+    "id": "job_02",
+    "company": "FPT Software",
+    "title": "Data Analyst / Data Engineer Associate",
+    "location": "Hà Nội / TP.HCM",
+    "skills": ["Python", "SQL", "Pandas", "NumPy", "PowerBI", "PostgreSQL"],
+    "description": "Xây dựng pipeline xử lý dữ liệu, truy vấn dữ liệu từ Hệ cơ sở dữ liệu SQL và viết báo cáo phân tích chỉ số kinh doanh.",
+    "apply_link": "https://career.fpt-software.com"
+  },
+  {
+    "id": "job_03",
+    "company": "VNG Corporation",
+    "title": "AI Product Engineer Intern",
+    "location": "TP.HCM / Remote",
+    "skills": ["Python", "FastAPI", "Docker", "Git", "LLM", "Streamlit", "SQL"],
+    "description": "Tích hợp các mô hình AI/LLM API vào sản phẩm thực tế, xây dựng Backend dịch vụ bằng FastAPI/Flask và quản lý mã nguồn qua Git.",
+    "apply_link": "https://vng.com.vn/careers"
+  },
+  {
+    "id": "job_04",
+    "company": "Viettel AI Innovation Center",
+    "title": "Thực tập sinh Trí tuệ nhân tạo (AI Intern)",
+    "location": "Hà Nội",
+    "skills": ["Python", "C++", "OpenCV", "PyTorch", "Machine Learning", "Linux"],
+    "description": "Tham gia vào các dự án thị giác máy tính và xử lý tiếng nói. Ưu tiên sinh viên chuyên ngành AI/Khoa học dữ liệu có kỹ năng lập trình Python tốt.",
+    "apply_link": "https://viettel.vn/careers"
+  },
+  {
+    "id": "job_05",
+    "company": "MB Bank (Ngân hàng Quân đội)",
+    "title": "Junior Data Scientist",
+    "location": "Hà Nội",
+    "skills": ["Python", "SQL", "Scikit-Learn", "Pandas", "Machine Learning", "Statistics"],
+    "description": "Phát triển các mô hình học máy phân tích hành vi khách hàng tài chính, xử lý dữ liệu lớn bằng SQL và Pandas.",
+    "apply_link": "https://mbbank.com.vn/careers"
+  }
+]
