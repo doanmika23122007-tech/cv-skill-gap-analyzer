@@ -230,26 +230,26 @@ def remove_accents(input_str: str) -> str:
     return only_ascii.replace('đ', 'd').replace('Đ', 'D')
 
 def generate_pdf_report(advice: str, top_matches: list) -> bytes:
-    """Tạo file PDF báo cáo kết quả phân tích công việc"""
+    """Tạo file PDF báo cáo kết quả phân tích công việc (Đã fix lỗi lề FPDF2)"""
     pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Helvetica", size=12)
     
-    # Title
+    # Title (Dùng width=0 để FPDF tự động căn tràn lề chuẩn)
     pdf.set_font("Helvetica", 'B', 16)
-    pdf.cell(200, 10, txt="AI JOB MATCHING & SKILL-GAP REPORT", ln=1, align='C')
+    pdf.cell(0, 10, txt="AI JOB MATCHING & SKILL-GAP REPORT", ln=1, align='C')
     pdf.ln(5)
     
     # Advice Section
     pdf.set_font("Helvetica", 'B', 12)
-    pdf.cell(200, 8, txt="1. CAREER ADVICE SUMMARY:", ln=1)
+    pdf.cell(0, 8, txt="1. CAREER ADVICE SUMMARY:", ln=1)
     pdf.set_font("Helvetica", size=10)
     pdf.multi_cell(0, 6, txt=remove_accents(advice))
     pdf.ln(5)
     
     # Top Jobs Section
     pdf.set_font("Helvetica", 'B', 12)
-    pdf.cell(200, 8, txt="2. TOP RECOMMENDED COMPANIES & JOBS:", ln=1)
+    pdf.cell(0, 8, txt="2. TOP RECOMMENDED COMPANIES & JOBS:", ln=1)
     
     for idx, match in enumerate(top_matches, 1):
         job = match["job_data"]
