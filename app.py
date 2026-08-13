@@ -7,7 +7,7 @@ import pdfplumber
 import numpy as np
 from google import genai
 from google.genai import types
-from google.genai.errors import ServerError
+from google.genai.errors import ServerError, ClientError, APIError
 
 # ---------------------------------------------------------------------------
 # 1. CẤU HÌNH TRANG STREAMLIT
@@ -69,15 +69,21 @@ def extract_text_from_pdf_file(uploaded_file) -> str:
         return ""
 
 # ---------------------------------------------------------------------------
-# 3. LEVEL 1: VECTOR EMBEDDINGS & COSINE SIMILARITY MATH
+# 3. VECTOR EMBEDDINGS & FALLBACK MATCHING ENGINE
 # ---------------------------------------------------------------------------
 def get_text_embedding(api_key: str, text: str) -> list:
-    client = genai.Client(api_key=api_key)
-    response = client.models.embed_content(
-        model="text-embedding-004",
-        contents=text
-    )
-    return response.embeddings[0].values
+    """
+    Thử tạo Vector bằng Embeddings API, nếu lỗi sẽ trả về None để dùng Fallback.
+    """
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.embed_content(
+            model="text-embedding-004",
+            contents=text
+        )
+        return response.embeddings[0].values
+    except Exception:
+        return None
 
 def calculate_cosine_similarity(vec1: list, vec2: list) -> float:
     u = np.array(vec1)
@@ -89,34 +95,55 @@ def calculate_cosine_similarity(vec1: list, vec2: list) -> float:
         return 0.0
     return float(dot_product / (norm_u * norm_v))
 
-def find_top_matching_jobs_semantic(api_key: str, cv_text: str, cv_skills: set, jobs_db: list, top_k: int = 3) -> list:
-    # 1. Biến CV thành Vector 768 chiều
+def find_top_matching_jobs_hybrid(api_key: str, cv_text: str, cv_skills: set, jobs_db: list, top_k: int = 3) -> tuple:
+    """
+    Thực hiện Vector Matcher. Nếu API Embedding bị chối từ, tự chuyển sang Regex Matcher.
+    """
     cv_vector = get_text_embedding(api_key, cv_text)
     
+    # CASE 1: VECTOR EMBEDDINGS THÀNH CÔNG (SEMANTIC SEARCH)
+    if cv_vector is not None:
+        scored_jobs = []
+        for job in jobs_db:
+            job_full_text = f"{job['title']} {job['company']} {job['description']} " + " ".join(job.get('skills', []))
+            job_vector = get_text_embedding(api_key, job_full_text)
+            
+            if job_vector is not None:
+                semantic_score = calculate_cosine_similarity(cv_vector, job_vector)
+                match_score = round(max(0, semantic_score) * 100)
+            else:
+                match_score = 0
+                
+            job_skills = set(job.get("skills", []))
+            matched = cv_skills.intersection(job_skills)
+            missing = list(job_skills - cv_skills)
+            
+            scored_jobs.append({
+                "job_data": job,
+                "match_score": match_score,
+                "matched_skills": list(matched),
+                "missing_skills": missing
+            })
+        
+        scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
+        return scored_jobs[:top_k], "Vector Embeddings (Semantic Search)"
+
+    # CASE 2: FALLBACK SANG REGEX KEYWORD MATCHING NẾU EMBEDDING LỖI
     scored_jobs = []
     for job in jobs_db:
-        # 2. Biến JD thành Vector
-        job_full_text = f"{job['title']} {job['company']} {job['description']} " + " ".join(job.get('skills', []))
-        job_vector = get_text_embedding(api_key, job_full_text)
-        
-        # 3. Tính Cosine Similarity
-        semantic_score = calculate_cosine_similarity(cv_vector, job_vector)
-        match_score = round(max(0, semantic_score) * 100)
-        
-        # 4. Đối soát kỹ năng cứng Regex
         job_skills = set(job.get("skills", []))
         matched = cv_skills.intersection(job_skills)
-        missing = list(job_skills - cv_skills)
+        score = round((len(matched) / len(job_skills) * 100)) if job_skills else 0
         
         scored_jobs.append({
             "job_data": job,
-            "match_score": match_score,
+            "match_score": score,
             "matched_skills": list(matched),
-            "missing_skills": missing
+            "missing_skills": list(job_skills - cv_skills)
         })
     
     scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
-    return scored_jobs[:top_k]
+    return scored_jobs[:top_k], "Python Regex Keyword Matcher (Fallback)"
 
 def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: list) -> dict:
     client = genai.Client(api_key=api_key)
@@ -197,7 +224,7 @@ def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
 # 5. GIAO DIỆN STREAMLIT UI (CÓ TABS)
 # ---------------------------------------------------------------------------
 st.title("💼 AI Job Matching & CV Optimizer Engine")
-st.caption("Hệ thống Phân tích Khớp nối Việc làm (Vector Search) & Tối ưu Hồ sơ Chuẩn STAR")
+st.caption("Hệ thống Phân tích Khớp nối Việc làm & Tối ưu Hồ sơ Chuẩn STAR")
 
 # SIDEBAR
 with st.sidebar:
@@ -207,9 +234,9 @@ with st.sidebar:
     st.success(f"📊 Đã nạp thành công **{len(jobs_db)}** tin tuyển dụng thực tế!")
 
 # TẠO TABS
-tab1, tab2 = st.tabs(["🔍 1. Tìm Công Ty & Phân Tích Job (Vector Search)", "✨ 2. AI Tối Ưu CV Chuẩn STAR"])
+tab1, tab2 = st.tabs(["🔍 1. Tìm Công Ty & Phân Tích Job", "✨ 2. AI Tối Ưu CV Chuẩn STAR"])
 
-# --- TAB 1: VECTOR JOB MATCHING ---
+# --- TAB 1: JOB MATCHING ---
 with tab1:
     st.subheader("📄 Tải lên CV (PDF) của bạn để tìm công việc phù hợp")
     uploaded_cv = st.file_uploader("Chọn file CV dạng PDF", type=["pdf"])
@@ -220,18 +247,18 @@ with tab1:
         elif not uploaded_cv:
             st.warning("⚠️ Vui lòng tải lên file PDF CV!")
         else:
-            with st.spinner("🔍 Đang tính toán Vector Embeddings (text-embedding-004) & Cosine Similarity..."):
+            with st.spinner("🔍 Đang tính toán độ phù hợp và lọc danh sách việc làm..."):
                 cv_text = extract_text_from_pdf_file(uploaded_cv)
                 if not cv_text:
                     st.error("❌ Không thể đọc văn bản từ PDF này.")
                 else:
                     cv_skills = extract_hard_skills_with_regex(cv_text)
                     
-                    # Gọi hàm Vector Semantic Matcher
-                    top_3_matches = find_top_matching_jobs_semantic(api_key_input, cv_text, cv_skills, jobs_db, top_k=3)
+                    # Gọi hàm Hybrid Matcher có Fallback
+                    top_3_matches, engine_used = find_top_matching_jobs_hybrid(api_key_input, cv_text, cv_skills, jobs_db, top_k=3)
                     ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
                     
-                    st.success("🎉 Đã tính toán xong độ tương thích bằng Vector Embeddings!")
+                    st.success(f"🎉 Đã hoàn tất phân tích! (Thuật toán sử dụng: **{engine_used}**)")
                     
                     st.markdown("---")
                     st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
@@ -251,7 +278,7 @@ with tab1:
                                 st.caption(f"📍 **Địa điểm:** {job['location']} | 🔗 [Trang tuyển dụng chính thức]({job['apply_link']})")
                                 st.write(f"**Mô tả công việc:** {job['description']}")
                             with c2:
-                                st.metric(label="Mức độ Khớp Ngữ Nghĩa", value=f"{score}%")
+                                st.metric(label="Mức độ Khớp CV", value=f"{score}%")
                             
                             sc1, sc2 = st.columns(2)
                             with sc1:
