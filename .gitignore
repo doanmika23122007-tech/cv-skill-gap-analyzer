@@ -1,0 +1,10 @@
+# Bỏ qua các file môi trường & key
+.env
+*.key
+
+# Bỏ qua bộ nhớ đệm Python
+__pycache__/
+*.pyc
+
+# Bỏ qua file PDF test cá nhân
+*.pdf
