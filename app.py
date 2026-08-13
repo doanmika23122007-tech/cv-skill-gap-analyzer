@@ -223,19 +223,31 @@ def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
 # ---------------------------------------------------------------------------
 # 4. TRỤC 2: LEVEL 3 - PDF REPORT EXPORTER UTILITY
 # ---------------------------------------------------------------------------
-def remove_accents(input_str: str) -> str:
-    """Loại bỏ dấu tiếng Việt để PDF xuất ra không bị lỗi Font hóa trang"""
+def clean_text_for_pdf(input_str: str) -> str:
+    """Làm sạch triệt để Unicode (dấu tiếng Việt & ký tự đặc biệt từ AI) cho FPDF"""
+    # 1. Thay thế các ký tự Unicode đặc biệt phổ biến mà Gemini hay sinh ra
+    replacements = {
+        '—': '-', '–': '-', '“': '"', '”': '"', '‘': "'", '’': "'",
+        '•': '*', '…': '...', '–': '-', '—': '-'
+    }
+    for orig, repl in replacements.items():
+        input_str = input_str.replace(orig, repl)
+    
+    # 2. Khử dấu tiếng Việt bằng NFKD
     nfkd_form = unicodedata.normalize('NFKD', input_str)
     only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-    return only_ascii.replace('đ', 'd').replace('Đ', 'D')
+    only_ascii = only_ascii.replace('đ', 'd').replace('Đ', 'D')
+    
+    # 3. Ép về ASCII thuần túy (bỏ mọi ký tự lạ còn sót)
+    return only_ascii.encode('ascii', 'ignore').decode('ascii')
 
 def generate_pdf_report(advice: str, top_matches: list) -> bytes:
-    """Tạo file PDF báo cáo kết quả phân tích công việc (Đã fix lỗi lề FPDF2)"""
+    """Tạo file PDF báo cáo kết quả phân tích công việc"""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Title (Dùng width=0 để FPDF tự động căn tràn lề chuẩn)
+    # Title
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(0, 10, txt="AI JOB MATCHING & SKILL-GAP REPORT", ln=1, align='C')
     pdf.ln(5)
@@ -244,7 +256,7 @@ def generate_pdf_report(advice: str, top_matches: list) -> bytes:
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 8, txt="1. CAREER ADVICE SUMMARY:", ln=1)
     pdf.set_font("Helvetica", size=10)
-    pdf.multi_cell(0, 6, txt=remove_accents(advice))
+    pdf.multi_cell(0, 6, txt=clean_text_for_pdf(advice))
     pdf.ln(5)
     
     # Top Jobs Section
@@ -254,11 +266,11 @@ def generate_pdf_report(advice: str, top_matches: list) -> bytes:
     for idx, match in enumerate(top_matches, 1):
         job = match["job_data"]
         pdf.set_font("Helvetica", 'B', 10)
-        pdf.cell(0, 6, txt=remove_accents(f"{idx}. {job['title']} - {job['company']} (Match: {match['match_score']}%)"), ln=1)
+        pdf.cell(0, 6, txt=clean_text_for_pdf(f"{idx}. {job['title']} - {job['company']} (Match: {match['match_score']}%)"), ln=1)
         pdf.set_font("Helvetica", size=9)
-        pdf.cell(0, 5, txt=remove_accents(f"   Location: {job['location']}"), ln=1)
-        pdf.multi_cell(0, 5, txt=remove_accents(f"   Matched Skills: {', '.join(match['matched_skills'])}"))
-        pdf.multi_cell(0, 5, txt=remove_accents(f"   Missing Skills: {', '.join(match['missing_skills'])}"))
+        pdf.cell(0, 5, txt=clean_text_for_pdf(f"   Location: {job['location']}"), ln=1)
+        pdf.multi_cell(0, 5, txt=clean_text_for_pdf(f"   Matched Skills: {', '.join(match['matched_skills'])}"))
+        pdf.multi_cell(0, 5, txt=clean_text_for_pdf(f"   Missing Skills: {', '.join(match['missing_skills'])}"))
         pdf.ln(3)
         
     return bytes(pdf.output())
