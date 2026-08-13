@@ -5,6 +5,8 @@ import time
 import os
 import pdfplumber
 import numpy as np
+import unicodedata
+from fpdf import FPDF
 from google import genai
 from google.genai import types
 from google.genai.errors import ServerError, ClientError, APIError
@@ -69,12 +71,9 @@ def extract_text_from_pdf_file(uploaded_file) -> str:
         return ""
 
 # ---------------------------------------------------------------------------
-# 3. VECTOR EMBEDDINGS & FALLBACK MATCHING ENGINE
+# 3. TRỤC 1: OPTIMIZED VECTOR SEARCH (O(1) API CALL COMPLEXITY)
 # ---------------------------------------------------------------------------
 def get_text_embedding(api_key: str, text: str) -> list:
-    """
-    Thử tạo Vector bằng Embeddings API, nếu lỗi sẽ trả về None để dùng Fallback.
-    """
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.embed_content(
@@ -95,20 +94,25 @@ def calculate_cosine_similarity(vec1: list, vec2: list) -> float:
         return 0.0
     return float(dot_product / (norm_u * norm_v))
 
-def find_top_matching_jobs_hybrid(api_key: str, cv_text: str, cv_skills: set, jobs_db: list, top_k: int = 3) -> tuple:
+def find_top_matching_jobs_optimized(api_key: str, cv_text: str, cv_skills: set, jobs_db: list, top_k: int = 3) -> tuple:
     """
-    Thực hiện Vector Matcher. Nếu API Embedding bị chối từ, tự chuyển sang Regex Matcher.
+    Tối ưu O(1) API Call: Chỉ tạo Vector 1 lần duy nhất cho CV người dùng.
     """
+    # 1. Tạo Vector cho CV
     cv_vector = get_text_embedding(api_key, cv_text)
     
-    # CASE 1: VECTOR EMBEDDINGS THÀNH CÔNG (SEMANTIC SEARCH)
     if cv_vector is not None:
         scored_jobs = []
         for job in jobs_db:
-            job_full_text = f"{job['title']} {job['company']} {job['description']} " + " ".join(job.get('skills', []))
-            job_vector = get_text_embedding(api_key, job_full_text)
-            
-            if job_vector is not None:
+            # Lấy vector có sẵn của Job, nếu chưa có mới tính bổ sung
+            if "embedding" in job and job["embedding"]:
+                job_vector = job["embedding"]
+            else:
+                job_full_text = f"{job['title']} {job['company']} {job['description']} " + " ".join(job.get('skills', []))
+                job_vector = get_text_embedding(api_key, job_full_text)
+                job["embedding"] = job_vector # Cache lại
+                
+            if job_vector:
                 semantic_score = calculate_cosine_similarity(cv_vector, job_vector)
                 match_score = round(max(0, semantic_score) * 100)
             else:
@@ -126,9 +130,9 @@ def find_top_matching_jobs_hybrid(api_key: str, cv_text: str, cv_skills: set, jo
             })
         
         scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
-        return scored_jobs[:top_k], "Vector Embeddings (Semantic Search)"
+        return scored_jobs[:top_k], "Fast Vector Embeddings O(1)"
 
-    # CASE 2: FALLBACK SANG REGEX KEYWORD MATCHING NẾU EMBEDDING LỖI
+    # Fallback sang Regex nếu API Embedding gặp sự cố
     scored_jobs = []
     for job in jobs_db:
         job_skills = set(job.get("skills", []))
@@ -149,7 +153,7 @@ def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: l
     client = genai.Client(api_key=api_key)
     prompt = f"""
     Bạn là chuyên gia tư vấn định hướng nghề nghiệp AI/IT.
-    Dưới đây là CV của ứng viên và Danh sách 3 công việc phù hợp nhất.
+    Dưới đây là CV ứng viên và Top 3 công việc phù hợp nhất.
 
     --- CV CỦA ỨNG VIÊN ---
     {cv_text}
@@ -183,9 +187,6 @@ def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: l
             continue
     return {"career_advice": "Không thể kết nối AI để sinh đánh giá chi tiết.", "top_recommendations": []}
 
-# ---------------------------------------------------------------------------
-# 4. LEVEL 2: AI CV OPTIMIZER (MÔ HÌNH STAR)
-# ---------------------------------------------------------------------------
 def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
     client = genai.Client(api_key=api_key)
     prompt = f"""
@@ -196,8 +197,7 @@ def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
     "{raw_bullet}"
 
     --- YÊU CẦU ---
-    - Mỗi phiên bản viết lại phải thể hiện rõ: Công nghệ sử dụng, giải pháp kỹ thuật, và kết quả định lượng (con số %).
-    - Trả về DUY NHẤT 1 chuỗi JSON chuẩn:
+    Trả về DUY NHẤT 1 chuỗi JSON chuẩn:
     {{
         "optimized_bullets": [
             "Phiên bản 1 (Tập trung Kỹ thuật & Công nghệ)",
@@ -219,6 +219,49 @@ def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
         except Exception:
             continue
     return {"optimized_bullets": [], "key_keywords_added": []}
+
+# ---------------------------------------------------------------------------
+# 4. TRỤC 2: LEVEL 3 - PDF REPORT EXPORTER UTILITY
+# ---------------------------------------------------------------------------
+def remove_accents(input_str: str) -> str:
+    """Loại bỏ dấu tiếng Việt để PDF xuất ra không bị lỗi Font hóa trang"""
+    nfkd_form = unicodedata.normalize('NFKD', input_str)
+    only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    return only_ascii.replace('đ', 'd').replace('Đ', 'D')
+
+def generate_pdf_report(advice: str, top_matches: list) -> bytes:
+    """Tạo file PDF báo cáo kết quả phân tích công việc"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    
+    # Title
+    pdf.set_font("Helvetica", 'B', 16)
+    pdf.cell(200, 10, txt="AI JOB MATCHING & SKILL-GAP REPORT", ln=1, align='C')
+    pdf.ln(5)
+    
+    # Advice Section
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(200, 8, txt="1. CAREER ADVICE SUMMARY:", ln=1)
+    pdf.set_font("Helvetica", size=10)
+    pdf.multi_cell(0, 6, txt=remove_accents(advice))
+    pdf.ln(5)
+    
+    # Top Jobs Section
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(200, 8, txt="2. TOP RECOMMENDED COMPANIES & JOBS:", ln=1)
+    
+    for idx, match in enumerate(top_matches, 1):
+        job = match["job_data"]
+        pdf.set_font("Helvetica", 'B', 10)
+        pdf.cell(0, 6, txt=remove_accents(f"{idx}. {job['title']} - {job['company']} (Match: {match['match_score']}%)"), ln=1)
+        pdf.set_font("Helvetica", size=9)
+        pdf.cell(0, 5, txt=remove_accents(f"   Location: {job['location']}"), ln=1)
+        pdf.multi_cell(0, 5, txt=remove_accents(f"   Matched Skills: {', '.join(match['matched_skills'])}"))
+        pdf.multi_cell(0, 5, txt=remove_accents(f"   Missing Skills: {', '.join(match['missing_skills'])}"))
+        pdf.ln(3)
+        
+    return bytes(pdf.output())
 
 # ---------------------------------------------------------------------------
 # 5. GIAO DIỆN STREAMLIT UI (CÓ TABS)
@@ -247,22 +290,35 @@ with tab1:
         elif not uploaded_cv:
             st.warning("⚠️ Vui lòng tải lên file PDF CV!")
         else:
-            with st.spinner("🔍 Đang tính toán độ phù hợp và lọc danh sách việc làm..."):
+            with st.spinner("⚡ Đang tính toán Vector Embeddings O(1) & Lọc nhanh công việc..."):
                 cv_text = extract_text_from_pdf_file(uploaded_cv)
                 if not cv_text:
                     st.error("❌ Không thể đọc văn bản từ PDF này.")
                 else:
                     cv_skills = extract_hard_skills_with_regex(cv_text)
                     
-                    # Gọi hàm Hybrid Matcher có Fallback
-                    top_3_matches, engine_used = find_top_matching_jobs_hybrid(api_key_input, cv_text, cv_skills, jobs_db, top_k=3)
+                    top_3_matches, engine_used = find_top_matching_jobs_optimized(api_key_input, cv_text, cv_skills, jobs_db, top_k=3)
                     ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
                     
-                    st.success(f"🎉 Đã hoàn tất phân tích! (Thuật toán sử dụng: **{engine_used}**)")
+                    st.success(f"🎉 Hoàn tất phân tích! (Thuật toán: **{engine_used}**)")
                     
                     st.markdown("---")
                     st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
-                    st.info(ai_evaluation.get("career_advice", ""))
+                    advice_text = ai_evaluation.get("career_advice", "")
+                    st.info(advice_text)
+                    
+                    # NÚT XUẤT BÁO CÁO PDF (LEVEL 3)
+                    try:
+                        pdf_bytes = generate_pdf_report(advice_text, top_3_matches)
+                        st.download_button(
+                            label="📥 Tải Báo Cáo Phân Tích (File PDF)",
+                            data=pdf_bytes,
+                            file_name="AI_Job_Matching_Report.pdf",
+                            mime="application/pdf",
+                            type="secondary"
+                        )
+                    except Exception as pdf_err:
+                        st.caption(f"Không thể tạo file PDF preview: {pdf_err}")
                     
                     st.markdown("---")
                     st.subheader("🏢 TOP 3 CÔNG TY & VỊ TRÍ PHÙ HỢP NHẤT")

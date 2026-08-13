@@ -1,3 +1,5 @@
 streamlit
 pdfplumber
 google-genai
+numpy
+fpdf2
