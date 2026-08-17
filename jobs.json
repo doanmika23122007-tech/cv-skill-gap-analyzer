@@ -1,45 +1,72 @@
 [
   {
+    "id": "vn_job_vinai_research",
+    "company": "VinAI Research",
+    "title": "AI Research / Engineering Resident",
+    "location": "Hà Nội",
+    "skills": [
+      "Python",
+      "PyTorch",
+      "Deep Learning",
+      "Mathematics & Algorithms"
+    ],
+    "description": "Nghiên cứu và phát triển các mô hình học sâu (Deep Learning) tiên tiến dưới sự hướng dẫn của các nhà khoa học hàng đầu. Tham gia công bố các bài báo khoa học tại các hội nghị AI uy tín quốc tế như CVPR, NeurIPS, ICCV. Đóng góp phát triển các giải pháp AI ứng dụng trực tiếp vào xe điện thông minh và hệ sinh thái thông minh.",
+    "apply_link": "https://www.vinai.io/careers/"
+  },
+  {
     "id": "vn_job_viettel_ai_innovation_center",
     "company": "Viettel AI Innovation Center",
     "title": "Kỹ sư Trí tuệ nhân tạo (Computer Vision / NLP)",
     "location": "Hà Nội",
     "skills": [
       "Python",
-      "PyTorch/TensorFlow",
-      "Computer Vision/NLP",
-      "Model Optimization (ONNX/TensorRT)"
+      "OpenCV",
+      "Transformers",
+      "TensorFlow / PyTorch"
     ],
-    "description": "Nghiên cứu, thiết kế và phát triển các mô hình Deep Learning tiên tiến trong lĩnh vực Computer Vision và Xử lý ngôn ngữ tự nhiên (NLP/LLMs) phục vụ các sản phẩm chiến lược của Viettel. Phối hợp với đội ngũ kỹ sư để tối ưu hóa hiệu năng, triển khai mô hình AI trên hệ thống tính toán phân tán và thiết bị biên. Tham gia thử nghiệm, đánh giá các công nghệ AI mới nhất nhằm giải quyết các bài toán lớn ở quy mô hàng triệu người dùng.",
+    "description": "Nghiên cứu, thiết kế và tối ưu các mô hình Thị giác máy tính và Xử lý ngôn ngữ tự nhiên phục vụ các nền tảng số quy mô hàng chục triệu người dùng. Tối ưu hóa hiệu năng mô hình và tích hợp vào hệ thống microservices thực tế. Đồng hành phát triển hệ sinh thái AI trợ lý ảo tiếng Việt và phân tích dữ liệu đa phương tiện của Viettel.",
     "apply_link": "https://tuyendung.viettel.vn/"
   },
   {
     "id": "vn_job_fpt_software",
     "company": "FPT Software",
-    "title": "Senior Data Engineer / AI Software Engineer",
+    "title": "Data Engineer / AI Software Engineer",
     "location": "Hà Nội / TP.HCM / Đà Nẵng",
     "skills": [
-      "Python",
+      "Python / Java",
       "Apache Spark",
-      "AWS/Azure Cloud",
-      "ETL/ELT Pipeline",
-      "MLOps"
+      "MLOps",
+      "Docker & Kubernetes"
     ],
-    "description": "Tham gia thiết kế, xây dựng và tối ưu hóa các đường ống dữ liệu (Data Pipeline) quy mô lớn cho các dự án chuyển đổi số toàn cầu của FPT Software. Tích hợp và triển khai các mô hình Machine Learning/GenAI lên môi trường Cloud, đảm bảo tính sẵn sàng và hiệu năng cao. Phối hợp cùng các Data Scientist và Software Architect để tối ưu kiến trúc dữ liệu và giải pháp AI toàn diện cho khách hàng quốc tế.",
+    "description": "Xây dựng các pipeline thu thập, xử lý và chuẩn hóa dữ liệu lớn phục vụ huấn luyện mô hình AI cho khách hàng toàn cầu. Đóng gói và triển khai các dịch vụ AI/ML lên môi trường Cloud tuân thủ chuẩn quy trình MLOps hiện đại. Phối hợp với đội ngũ Data Scientist để tối ưu hóa tốc độ truy xuất và độ trễ của hệ thống suy luận AI.",
     "apply_link": "https://career.fpt-software.com/"
   },
   {
-    "id": "vn_job_momo_m_service",
+    "id": "vn_job_vng_corporation",
+    "company": "VNG Corporation",
+    "title": "AI Backend / Machine Learning Intern",
+    "location": "TP.HCM",
+    "skills": [
+      "Python / Golang",
+      "RESTful API",
+      "Machine Learning Basics",
+      "SQL & NoSQL"
+    ],
+    "description": "Hỗ trợ xây dựng các dịch vụ Backend và API để tích hợp các mô hình học máy vào hệ sinh thái sản phẩm Zalo và Game. Tham gia tiền xử lý, gán nhãn và kiểm thử tập dữ liệu lớn phục vụ bài toán Recommendation và Chống gian lận. Học hỏi và thực hành quy trình phát triển phần mềm chuẩn mực trong môi trường chịu tải cao thực tế.",
+    "apply_link": "https://careers.vng.com.vn/"
+  },
+  {
+    "id": "vn_job_momo",
     "company": "MoMo (M-Service)",
-    "title": "Junior Data Analyst",
+    "title": "Junior Data Analyst / Data Scientist",
     "location": "TP.HCM",
     "skills": [
       "SQL",
       "Python",
-      "Tableau",
-      "Statistical Modeling"
+      "Data Visualization (Tableau/PowerBI)",
+      "A/B Testing"
     ],
-    "description": "Tham gia phân tích dữ liệu hành vi người dùng và giao dịch quy mô lớn trên hệ sinh thái siêu ứng dụng MoMo. Xây dựng các dashboard trực quan hóa dữ liệu và phối hợp cùng Product Team để đưa ra đề xuất tối ưu hóa trải nghiệm khách hàng cũng như chiến dịch tăng trưởng. Hỗ trợ team Data Scientist trong việc chuẩn bị dữ liệu và thử nghiệm các mô hình phân khúc người dùng.",
+    "description": "Khai phá dữ liệu giao dịch tài chính và hành vi người dùng nhằm tìm kiếm insight thúc đẩy quyết định kinh doanh và tối ưu sản phẩm. Xây dựng các báo cáo phân tích, dashboard tự động hóa và thiết kế các kịch bản thử nghiệm A/B Testing. Phối hợp cùng các nhóm Product và Business để xây dựng các mô hình chấm điểm tín dụng và phân khúc khách hàng.",
     "apply_link": "https://momo.vn/tuyen-dung"
   }
 ]
