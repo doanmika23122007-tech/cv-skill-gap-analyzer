@@ -31,11 +31,32 @@ TECH_KEYWORDS = [
 # ---------------------------------------------------------------------------
 # 2. HÀM ĐỌC DATABASE & XỬ LÝ VĂN BẢN
 # ---------------------------------------------------------------------------
+from datetime import datetime
+
 def load_jobs_database() -> list:
-    if os.path.exists("jobs.json"):
-        with open("jobs.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    if not os.path.exists("jobs.json"):
+        return []
+    
+    with open("jobs.json", "r", encoding="utf-8") as f:
+        raw_jobs = json.load(f)
+
+    valid_jobs = []
+    today = datetime.now().date()
+
+    for job in raw_jobs:
+        deadline_str = job.get("deadline")
+        if deadline_str:
+            try:
+                job_deadline = datetime.strptime(deadline_str, "%Y-%m-%d").date()
+                # Chỉ giữ lại các công việc có hạn chót >= ngày hôm nay
+                if job_deadline >= today:
+                    valid_jobs.append(job)
+            except ValueError:
+                valid_jobs.append(job)
+        else:
+            valid_jobs.append(job)
+
+    return valid_jobs
 
 def extract_hard_skills_with_regex(text: str) -> set:
     found_skills = set()
@@ -295,7 +316,7 @@ with tab1:
                             c1, c2 = st.columns([3, 1])
                             with c1:
                                 st.markdown(f"### {idx}. {job['title']} — **{job['company']}**")
-                                st.caption(f"📍 **Địa điểm:** {job['location']} | 🔗 [Trang tuyển dụng chính thức]({job['apply_link']})")
+                                st.caption(f"📍 **Địa điểm:** {job['location']} | ⏳ **Hạn nộp:** {job.get('deadline', 'Đang tuyển')} | 🔗 [Trang tuyển dụng chính thức]({job['apply_link']})")
                                 st.write(f"**Mô tả công việc:** {job['description']}")
                             with c2:
                                 st.metric(label="Mức độ Khớp CV", value=f"{score}%")
@@ -339,7 +360,7 @@ with tab3:
         st.info("Chưa có dữ liệu việc làm trong file jobs.json.")
     else:
         for idx, job in enumerate(jobs_db, 1):
-            with st.expander(f"🏢 {idx}. {job.get('title')} — **{job.get('company')}** ({job.get('location')})"):
+            with st.expander(f"🏢 {idx}. {job.get('title')} — **{job.get('company')}** ({job.get('location')}) - Hạn: {job.get('deadline', 'N/A')}"):
                 st.write(f"**Mô tả vị trí:** {job.get('description')}")
                 st.write("**Kỹ năng yêu cầu:** " + ", ".join(job.get('skills', [])))
                 st.markdown(f"🔗 [Truy cập trang tuyển dụng nộp hồ sơ]({job.get('apply_link')})")

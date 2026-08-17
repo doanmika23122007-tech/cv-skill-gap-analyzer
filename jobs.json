@@ -4,6 +4,7 @@
     "company": "VinAI Research",
     "title": "AI Research / Engineering Resident",
     "location": "Hà Nội",
+    "deadline": "2026-10-31",
     "skills": [
       "Python",
       "PyTorch",
@@ -18,6 +19,7 @@
     "company": "Viettel AI Innovation Center",
     "title": "Kỹ sư Trí tuệ nhân tạo (Computer Vision / NLP)",
     "location": "Hà Nội",
+    "deadline": "2026-11-15",
     "skills": [
       "Python",
       "OpenCV",
@@ -32,6 +34,7 @@
     "company": "FPT Software",
     "title": "Data Engineer / AI Software Engineer",
     "location": "Hà Nội / TP.HCM / Đà Nẵng",
+    "deadline": "2026-09-30",
     "skills": [
       "Python / Java",
       "Apache Spark",
@@ -46,6 +49,7 @@
     "company": "VNG Corporation",
     "title": "AI Backend / Machine Learning Intern",
     "location": "TP.HCM",
+    "deadline": "2026-10-15",
     "skills": [
       "Python / Golang",
       "RESTful API",
@@ -60,6 +64,7 @@
     "company": "MoMo (M-Service)",
     "title": "Junior Data Analyst / Data Scientist",
     "location": "TP.HCM",
+    "deadline": "2026-09-15",
     "skills": [
       "SQL",
       "Python",

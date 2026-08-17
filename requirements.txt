@@ -2,4 +2,5 @@ streamlit
 pdfplumber
 google-genai
 numpy
+pandas
 fpdf2
