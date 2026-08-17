@@ -278,8 +278,12 @@ with st.sidebar:
     jobs_db = load_jobs_database()
     st.success(f"📊 Đã nạp thành công **{len(jobs_db)}** tin tuyển dụng thực tế!")
 
-# TẠO TABS
-tab1, tab2 = st.tabs(["🔍 1. Tìm Công Ty & Phân Tích Job", "✨ 2. AI Tối Ưu CV Chuẩn STAR"])
+# TẠO 3 TABS (ĐÃ BỔ SUNG TAB XEM KHO VIỆC LÀM)
+tab1, tab2, tab3 = st.tabs([
+    "🔍 1. Tìm Công Ty & Phân Tích Job", 
+    "✨ 2. AI Tối Ưu CV Chuẩn STAR",
+    "📋 3. Kho Dữ Liệu Việc Làm (Database)"
+])
 
 # --- TAB 1: JOB MATCHING ---
 with tab1:
@@ -298,18 +302,15 @@ with tab1:
                     st.error("❌ Không thể đọc văn bản từ PDF này.")
                 else:
                     cv_skills = extract_hard_skills_with_regex(cv_text)
-                    
                     top_3_matches, engine_used = find_top_matching_jobs_optimized(api_key_input, cv_text, cv_skills, jobs_db, top_k=3)
                     ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
                     
                     st.success(f"🎉 Hoàn tất phân tích! (Thuật toán: **{engine_used}**)")
-                    
                     st.markdown("---")
                     st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
                     advice_text = ai_evaluation.get("career_advice", "")
                     st.info(advice_text)
                     
-                    # NÚT XUẤT BÁO CÁO PDF (LEVEL 3)
                     try:
                         pdf_bytes = generate_pdf_report(advice_text, top_3_matches)
                         st.download_button(
@@ -324,11 +325,9 @@ with tab1:
                     
                     st.markdown("---")
                     st.subheader("🏢 TOP 3 CÔNG TY & VỊ TRÍ PHÙ HỢP NHẤT")
-                    
                     for idx, match in enumerate(top_3_matches, 1):
                         job = match["job_data"]
                         score = match["match_score"]
-                        
                         with st.container():
                             c1, c2 = st.columns([3, 1])
                             with c1:
@@ -343,20 +342,17 @@ with tab1:
                                 st.write("✅ **Kỹ năng CV đáp ứng:** " + (", ".join(match["matched_skills"]) if match["matched_skills"] else "Chưa ghi nhận"))
                             with sc2:
                                 st.write("❌ **Kỹ năng cần bổ sung thêm:** " + (", ".join(match["missing_skills"]) if match["missing_skills"] else "Đã đáp ứng đủ!"))
-                            
                             st.markdown("---")
 
 # --- TAB 2: AI CV OPTIMIZER ---
 with tab2:
     st.subheader("✨ Biến câu mô tả CV sơ sài thành Bullet-Points đắt giá chuẩn STAR")
     st.write("Nhập một dòng mô tả dự án hoặc kinh nghiệm làm việc cũ của bạn vào đây:")
-    
     user_bullet_input = st.text_area(
         "Nhập câu mô tả cũ:",
         height=100,
         placeholder="Ví dụ: Tôi có làm một dự án phân tích dữ liệu CV bằng Python và Streamlit."
     )
-    
     if st.button("🚀 Viết Lại Chuẩn STAR Ngay", type="primary"):
         if not api_key_input:
             st.warning("⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái!")
@@ -365,13 +361,22 @@ with tab2:
         else:
             with st.spinner("🤖 AI đang phân tích ngữ cảnh và viết lại theo mô hình STAR..."):
                 opt_result = optimize_cv_bullet_points(api_key_input, user_bullet_input)
-                
                 st.success("🎉 Đã tạo thành công các phiên bản CV chuẩn ATS!")
-                
                 st.markdown("### 📝 Các gợi ý viết lại đắt giá:")
                 for idx, bullet in enumerate(opt_result.get("optimized_bullets", []), 1):
                     st.info(f"**Gợi ý {idx}:** {bullet}")
-                
                 keywords = opt_result.get("key_keywords_added", [])
                 if keywords:
                     st.write("🔑 **Từ khóa công nghệ đắt giá được bổ sung:** " + ", ".join(keywords))
+
+# --- TAB 3: XEM TOÀN BỘ KHO VIỆC LÀM ---
+with tab3:
+    st.subheader(f"📋 Danh Sách Toàn Bộ {len(jobs_db)} Vị Trí Tuyển Dụng Trong Hệ Thống")
+    if not jobs_db:
+        st.info("Chưa có dữ liệu việc làm trong file jobs.json.")
+    else:
+        for idx, job in enumerate(jobs_db, 1):
+            with st.expander(f"🏢 {idx}. {job.get('title')} — **{job.get('company')}** ({job.get('location')})"):
+                st.write(f"**Mô tả vị trí:** {job.get('description')}")
+                st.write("**Kỹ năng yêu cầu:** " + ", ".join(job.get('skills', [])))
+                st.markdown(f"🔗 [Truy cập trang tuyển dụng nộp hồ sơ]({job.get('apply_link')})")
