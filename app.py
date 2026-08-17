@@ -5,11 +5,11 @@ import time
 import os
 import pdfplumber
 import numpy as np
+import pandas as pd
 import unicodedata
 from fpdf import FPDF
 from google import genai
 from google.genai import types
-from google.genai.errors import ServerError, ClientError, APIError
 
 # ---------------------------------------------------------------------------
 # 1. CẤU HÌNH TRANG STREAMLIT
@@ -169,7 +169,7 @@ def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: l
         ]
     }}
     """
-    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
+    candidate_models = ['gemini-flash-latest']
     for model_name in candidate_models:
         try:
             response = client.models.generate_content(
@@ -207,7 +207,7 @@ def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
         "key_keywords_added": ["Từ khóa công nghệ 1", "Từ khóa công nghệ 2"]
     }}
     """
-    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
+    candidate_models = ['gemini-flash-latest']
     for model_name in candidate_models:
         try:
             response = client.models.generate_content(
@@ -266,7 +266,7 @@ def generate_pdf_report(advice: str, top_matches: list) -> bytes:
     return bytes(pdf.output())
 
 # ---------------------------------------------------------------------------
-# 5. GIAO DIỆN STREAMLIT UI (CÓ TABS)
+# 5. GIAO DIỆN STREAMLIT UI
 # ---------------------------------------------------------------------------
 st.title("💼 AI Job Matching & CV Optimizer Engine")
 st.caption("Hệ thống Phân tích Khớp nối Việc làm & Tối ưu Hồ sơ Chuẩn STAR")
@@ -278,7 +278,7 @@ with st.sidebar:
     jobs_db = load_jobs_database()
     st.success(f"📊 Đã nạp thành công **{len(jobs_db)}** tin tuyển dụng thực tế!")
 
-# TẠO 3 TABS (ĐÃ BỔ SUNG TAB XEM KHO VIỆC LÀM)
+# TẠO 3 TABS
 tab1, tab2, tab3 = st.tabs([
     "🔍 1. Tìm Công Ty & Phân Tích Job", 
     "✨ 2. AI Tối Ưu CV Chuẩn STAR",
@@ -306,6 +306,7 @@ with tab1:
                     ai_evaluation = evaluate_job_recommendations_with_ai(api_key_input, cv_text, top_3_matches)
                     
                     st.success(f"🎉 Hoàn tất phân tích! (Thuật toán: **{engine_used}**)")
+                    
                     st.markdown("---")
                     st.subheader("💡 Tóm tắt Định hướng Nghề nghiệp")
                     advice_text = ai_evaluation.get("career_advice", "")
@@ -322,6 +323,15 @@ with tab1:
                         )
                     except Exception as pdf_err:
                         st.caption(f"Không thể tạo file PDF preview: {pdf_err}")
+                    
+                    # 📊 BIỂU ĐỒ TRỰC QUAN HÓA MỨC ĐỘ KHỚP
+                    st.markdown("---")
+                    st.subheader("📊 Biểu Đồ Trực Quan Mức Độ Khớp Nối (%)")
+                    chart_df = pd.DataFrame({
+                        "Công ty & Vị trí": [f"{m['job_data']['company']} - {m['job_data']['title']}" for m in top_3_matches],
+                        "Độ tương thích (%)": [m["match_score"] for m in top_3_matches]
+                    }).set_index("Công ty & Vị trí")
+                    st.bar_chart(chart_df, color="#FF4B4B")
                     
                     st.markdown("---")
                     st.subheader("🏢 TOP 3 CÔNG TY & VỊ TRÍ PHÙ HỢP NHẤT")
