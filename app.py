@@ -71,7 +71,7 @@ def extract_text_from_pdf_file(uploaded_file) -> str:
         return ""
 
 # ---------------------------------------------------------------------------
-# 3. TRỤC 1: OPTIMIZED VECTOR SEARCH (O(1) API CALL COMPLEXITY)
+# 3. VECTOR EMBEDDINGS & FALLBACK MATCHING ENGINE (O(1) OPTIMIZED)
 # ---------------------------------------------------------------------------
 def get_text_embedding(api_key: str, text: str) -> list:
     try:
@@ -95,22 +95,17 @@ def calculate_cosine_similarity(vec1: list, vec2: list) -> float:
     return float(dot_product / (norm_u * norm_v))
 
 def find_top_matching_jobs_optimized(api_key: str, cv_text: str, cv_skills: set, jobs_db: list, top_k: int = 3) -> tuple:
-    """
-    Tối ưu O(1) API Call: Chỉ tạo Vector 1 lần duy nhất cho CV người dùng.
-    """
-    # 1. Tạo Vector cho CV
     cv_vector = get_text_embedding(api_key, cv_text)
     
     if cv_vector is not None:
         scored_jobs = []
         for job in jobs_db:
-            # Lấy vector có sẵn của Job, nếu chưa có mới tính bổ sung
             if "embedding" in job and job["embedding"]:
                 job_vector = job["embedding"]
             else:
                 job_full_text = f"{job['title']} {job['company']} {job['description']} " + " ".join(job.get('skills', []))
                 job_vector = get_text_embedding(api_key, job_full_text)
-                job["embedding"] = job_vector # Cache lại
+                job["embedding"] = job_vector
                 
             if job_vector:
                 semantic_score = calculate_cosine_similarity(cv_vector, job_vector)
@@ -187,14 +182,19 @@ def evaluate_job_recommendations_with_ai(api_key: str, cv_text: str, top_jobs: l
             continue
     return {"career_advice": "Không thể kết nối AI để sinh đánh giá chi tiết.", "top_recommendations": []}
 
+# ---------------------------------------------------------------------------
+# 4. STAR CV OPTIMIZER & PDF REPORT EXPORTER
+# ---------------------------------------------------------------------------
 def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
     client = genai.Client(api_key=api_key)
+    safe_bullet = raw_bullet.replace('"', "'").strip()
+    
     prompt = f"""
     Bạn là một chuyên gia viết CV và tối ưu hồ sơ ứng tuyển ngành IT/AI.
     Hãy lấy câu mô tả kinh nghiệm/dự án sơ sài dưới đây của ứng viên và viết lại thành 3 phiên bản xuất sắc theo mô hình STAR (Situation - Task - Action - Result).
 
     --- MÔ TẢ CŨ CỦA ỨNG VIÊN ---
-    "{raw_bullet}"
+    "{safe_bullet}"
 
     --- YÊU CẦU ---
     Trả về DUY NHẤT 1 chuỗi JSON chuẩn:
@@ -220,12 +220,9 @@ def optimize_cv_bullet_points(api_key: str, raw_bullet: str) -> dict:
             continue
     return {"optimized_bullets": [], "key_keywords_added": []}
 
-# ---------------------------------------------------------------------------
-# 4. TRỤC 2: LEVEL 3 - PDF REPORT EXPORTER UTILITY
-# ---------------------------------------------------------------------------
 def clean_text_for_pdf(input_str: str) -> str:
-    """Làm sạch triệt để Unicode (dấu tiếng Việt & ký tự đặc biệt từ AI) cho FPDF"""
-    # 1. Thay thế các ký tự Unicode đặc biệt phổ biến mà Gemini hay sinh ra
+    if not input_str:
+        return ""
     replacements = {
         '—': '-', '–': '-', '“': '"', '”': '"', '‘': "'", '’': "'",
         '•': '*', '…': '...', '–': '-', '—': '-'
@@ -233,33 +230,26 @@ def clean_text_for_pdf(input_str: str) -> str:
     for orig, repl in replacements.items():
         input_str = input_str.replace(orig, repl)
     
-    # 2. Khử dấu tiếng Việt bằng NFKD
     nfkd_form = unicodedata.normalize('NFKD', input_str)
     only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
     only_ascii = only_ascii.replace('đ', 'd').replace('Đ', 'D')
-    
-    # 3. Ép về ASCII thuần túy (bỏ mọi ký tự lạ còn sót)
     return only_ascii.encode('ascii', 'ignore').decode('ascii')
 
 def generate_pdf_report(advice: str, top_matches: list) -> bytes:
-    """Tạo file PDF báo cáo kết quả phân tích công việc"""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Title
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(0, 10, txt="AI JOB MATCHING & SKILL-GAP REPORT", ln=1, align='C')
     pdf.ln(5)
     
-    # Advice Section
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 8, txt="1. CAREER ADVICE SUMMARY:", ln=1)
     pdf.set_font("Helvetica", size=10)
     pdf.multi_cell(0, 6, txt=clean_text_for_pdf(advice))
     pdf.ln(5)
     
-    # Top Jobs Section
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 8, txt="2. TOP RECOMMENDED COMPANIES & JOBS:", ln=1)
     
