@@ -1,10 +1,18 @@
-# Bỏ qua các file môi trường & key
-.env
-*.key
-
-# Bỏ qua bộ nhớ đệm Python
+# Virtual Environment & Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
 
-# Bỏ qua file PDF test cá nhân
-*.pdf
+# Environment Variables & Secrets
+.env
+fetch_vn_jobs.py
+
+# Streamlit local settings
+.streamlit/secrets.toml
+
+# OS Files
+.DS_Store
+Thumbs.db
